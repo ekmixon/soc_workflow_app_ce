@@ -41,26 +41,32 @@ class SplunkBackend(SingleTextQueryBackend):
     mapListValueExpression = "%s IN %s"
 
     def generateMapItemListNode(self, key, value):
-        if not set([type(val) for val in value]).issubset({str, int}):
+        if not {type(val) for val in value}.issubset({str, int}):
             raise TypeError("List values must be strings or numbers")
-        return "(" + (" OR ".join(['%s=%s' % (key, self.generateValueNode(item)) for item in value])) + ")"
+        return (
+            "("
+            + " OR ".join(
+                [f'{key}={self.generateValueNode(item)}' for item in value]
+            )
+            + ")"
+        )
 
     def generateAggregation(self, agg):
-        if agg == None:
+        if agg is None:
             return ""
         if agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_NEAR:
             raise NotImplementedError("The 'near' aggregation operator is not yet implemented for this backend")
-        if agg.groupfield == None:
-            return " | stats %s(%s) as val | search val %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.cond_op, agg.condition)
-        else:
-            if agg.aggfunc_notrans == 'count':
-                agg.aggfunc_notrans = 'dc'
-            return " | stats %s(%s) as val by %s | search val %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.groupfield or "", agg.cond_op, agg.condition)
+        if agg.groupfield is None:
+            return f' | stats {agg.aggfunc_notrans}({agg.aggfield or ""}) as val | search val {agg.cond_op} {agg.condition}'
+
+        if agg.aggfunc_notrans == 'count':
+            agg.aggfunc_notrans = 'dc'
+        return f' | stats {agg.aggfunc_notrans}({agg.aggfield or ""}) as val by {agg.groupfield or ""} | search val {agg.cond_op} {agg.condition}'
 
         
     def generate(self, sigmaparser):
         """Method is called for each sigma rule and receives the parsed rule (SigmaParser)"""
-        columns = list()
+        columns = []
         try:
             for field in sigmaparser.parsedyaml["fields"]:
                 mapped = sigmaparser.config.get_fieldmapping(field).resolve_fieldname(field)
@@ -72,12 +78,10 @@ class SplunkBackend(SingleTextQueryBackend):
                     raise TypeError("Field mapping must return string or list")
 
             fields = ",".join(str(x) for x in columns)
-            fields = " | table " + fields
+            fields = f" | table {fields}"
 
         except KeyError:    # no 'fields' attribute
             mapped = None
-            pass
-
         for parsed in sigmaparser.condparsed:
             query = self.generateQuery(parsed)
             before = self.generateBefore(parsed)
@@ -131,17 +135,24 @@ class SplunkXMLBackend(SingleTextQueryBackend, MultiRuleOutputMixin):
     mapListValueExpression = SplunkBackend.mapListValueExpression
 
     def generateMapItemListNode(self, key, value):
-        return "(" + (" OR ".join(['%s=%s' % (key, self.generateValueNode(item)) for item in value])) + ")"
+        return (
+            "("
+            + " OR ".join(
+                [f'{key}={self.generateValueNode(item)}' for item in value]
+            )
+            + ")"
+        )
 
     def generateAggregation(self, agg):
-        if agg == None:
+        if agg is None:
             return ""
         if agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_NEAR:
             return ""
-        if agg.groupfield == None:
-            return " | stats %s(%s) as val | search val %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.cond_op, agg.condition)
+        if agg.groupfield is None:
+            return f' | stats {agg.aggfunc_notrans}({agg.aggfield or ""}) as val | search val {agg.cond_op} {agg.condition}'
+
         else:
-            return " | stats %s(%s) as val by %s | search val %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.groupfield or "", agg.cond_op, agg.condition)
+            return f' | stats {agg.aggfunc_notrans}({agg.aggfield or ""}) as val by {agg.groupfield or ""} | search val {agg.cond_op} {agg.condition}'
 
     def generate(self, sigmaparser):
         """Method is called for each sigma rule and receives the parsed rule (SigmaParser)"""

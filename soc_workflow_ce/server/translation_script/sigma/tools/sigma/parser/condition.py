@@ -25,21 +25,19 @@ COND_NOT  = 3
 COND_NULL = 4
 
 # Debugging code
-def dumpNode(node, indent=''):   # pragma: no cover
+def dumpNode(node, indent=''):    # pragma: no cover
     """
     Recursively print the AST rooted at *node* for debugging.
     """
     if hasattr(node, 'items'):
-        print("%s%s<%s>" % (indent, type(node).__name__,
-                            type(node.items).__name__))
+        print(f"{indent}{type(node).__name__}<{type(node.items).__name__}>")
         if type(node.items) != list:
-            dumpNode(node.items, indent + '  ')
+            dumpNode(node.items, f'{indent}  ')
         else:
             for item in node.items:
-                dumpNode(item, indent + '  ')
+                dumpNode(item, f'{indent}  ')
     else:
-        print("%s%s=%s" % (indent, type(node).__name__,
-                                   repr(node)))
+        print(f"{indent}{type(node).__name__}={repr(node)}")
     return node
 
 # Condition Tokenizer
@@ -124,25 +122,26 @@ class SigmaConditionTokenizer:
             ]
 
     def __init__(self, condition):
-        if type(condition) == str:          # String that is parsed
-            self.tokens = list()
+        if type(condition) == str:  # String that is parsed
+            self.tokens = []
             pos = 1
 
             while len(condition) > 0:
                 for tokendef in self.tokendefs:     # iterate over defined tokens and try to recognize the next one
-                    match = tokendef[1].match(condition)
-                    if match:
+                    if match := tokendef[1].match(condition):
                         if tokendef[0] != None:
                             self.tokens.append(SigmaConditionToken(tokendef, match, pos + match.start()))
                         pos += match.end()      # increase position and cut matched prefix from condition
                         condition = condition[match.end():]
                         break
                 else:   # no valid token identified
-                    raise SigmaParseError("Unexpected token in condition at position %s" % condition)
+                    raise SigmaParseError(f"Unexpected token in condition at position {condition}")
         elif type(condition) == list:       # List of tokens to be converted into SigmaConditionTokenizer class
             self.tokens = condition
         else:
-            raise TypeError("SigmaConditionTokenizer constructor expects string or list, got %s" % (type(condition)))
+            raise TypeError(
+                f"SigmaConditionTokenizer constructor expects string or list, got {type(condition)}"
+            )
 
     def __str__(self):
         return " ".join([str(token) for token in self.tokens])
@@ -167,7 +166,9 @@ class SigmaConditionTokenizer:
         elif isinstance(other, (SigmaConditionToken, ParseTreeNode)):
             return SigmaConditionTokenizer(self.tokens + [ other ])
         else:
-            raise TypeError("+ operator expects SigmaConditionTokenizer or token type, got %s: %s" % (type(other), str(other)))
+            raise TypeError(
+                f"+ operator expects SigmaConditionTokenizer or token type, got {type(other)}: {str(other)}"
+            )
 
     def index(self, item):
         return self.tokens.index(item)
@@ -179,7 +180,7 @@ class ParseTreeNode:
         raise NotImplementedError("ConditionBase is no usable class")
 
     def __str__(self):
-        return "[ %s: %s ]" % (self.__doc__, str([str(item) for item in self.items]))
+        return f"[ {self.__doc__}: {[str(item) for item in self.items]} ]"
 
 class ConditionBase(ParseTreeNode):
     """Base class for conditional operations"""
@@ -203,8 +204,8 @@ class ConditionAND(ConditionBase):
     op = COND_AND
 
     def __init__(self, sigma=None, op=None, val1=None, val2=None):
-        if sigma == None and op == None and val1 == None and val2 == None:    # no parameters given - initialize empty
-            self.items = list()
+        if sigma is None and op is None and val1 is None and val2 is None:    # no parameters given - initialize empty
+            self.items = []
         else:       # called by parser, use given values
             self.items = [ val1, val2 ]
 
@@ -217,10 +218,7 @@ class ConditionNOT(ConditionBase):
     op = COND_NOT
 
     def __init__(self, sigma=None, op=None, val=None):
-        if sigma == None and op == None and val == None:    # no parameters given - initialize empty
-            self.items = list()
-        else:       # called by parser, use given values
-            self.items = [ val ]
+        self.items = [] if sigma is None and op is None and val is None else [ val ]
 
     def add(self, item):
         if len(self.items) == 0:
@@ -362,7 +360,7 @@ class SigmaConditionOptimizer:
 
             # OR(X, OR(Y))                  =>  OR(X, Y)
             if any(type(child) == type(node) for child in node.items) and \
-               all(type(child) in (type(node), tuple) for child in node.items):
+                   all(type(child) in (type(node), tuple) for child in node.items):
                 newitems = []
                 for child in node.items:
                     if hasattr(child, 'items'):
@@ -373,16 +371,13 @@ class SigmaConditionOptimizer:
                 return self._optimizeNode(node, changes=True)
 
             # OR(AND(X, ...), AND(X, ...))  =>  AND(X, OR(AND(...), AND(...)))
-            if type(node) == ConditionOR:
-                othertype = ConditionAND
-            else:
-                othertype = ConditionOR
+            othertype = ConditionAND if type(node) == ConditionOR else ConditionOR
             if all(type(child) == othertype for child in node.items):
-                promoted = []
-                for cand in node.items[0]:
-                    if all(cand in child for child in node.items[1:]):
-                        promoted.append(cand)
-                if len(promoted) > 0:
+                if promoted := [
+                    cand
+                    for cand in node.items[0]
+                    if all(cand in child for child in node.items[1:])
+                ]:
                     for child in node.items:
                         for cand in promoted:
                             child.items.remove(cand)
@@ -391,7 +386,7 @@ class SigmaConditionOptimizer:
                     newnode.add(node)
                     return self._optimizeNode(newnode, changes=True)
 
-            # fallthrough
+                # fallthrough
 
         elif type(node) == ConditionNOT:
             assert(len(node.items) == 1)
@@ -498,9 +493,12 @@ class SigmaConditionParser:
             except ValueError as e:
                 raise SigmaParseError("Missing matching closing parentheses") from e
             if lPos + 1 == rPos:
-                raise SigmaParseError("Empty subexpression at " + str(lTok.pos))
+                raise SigmaParseError(f"Empty subexpression at {str(lTok.pos)}")
             if lPos > rPos:
-                raise SigmaParseError("Closing parentheses at position " + str(rTok.pos) + " precedes opening at position " + str(lTok.pos))
+                raise SigmaParseError(
+                    f"Closing parentheses at position {str(rTok.pos)} precedes opening at position {str(lTok.pos)}"
+                )
+
 
             subparsed = self.parseSearch(tokens[lPos + 1:rPos])
             tokens = tokens[:lPos] + NodeSubexpression(subparsed) + tokens[rPos + 1:]   # replace parentheses + expression with group node that contains parsed subexpression
@@ -648,8 +646,8 @@ class SigmaAggregationParser(SimpleParser):
 
     def init_near_parsing(self, name):
         """Initialize data structures for 'near" aggregation operator parsing"""
-        self.include = list()
-        self.exclude = list()
+        self.include = []
+        self.exclude = []
         self.current = self.include
         return self.trans_aggfunc(name)
 

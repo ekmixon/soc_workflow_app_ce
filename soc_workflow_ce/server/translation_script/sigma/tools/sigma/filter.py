@@ -26,11 +26,11 @@ class SigmaRuleFilter:
     STATES = ["experimental", "testing", "stable"]
 
     def __init__(self, expr):
-        self.minlevel   = None 
-        self.maxlevel   = None 
+        self.minlevel   = None
+        self.maxlevel   = None
         self.status     = None
-        self.logsources = list()
-        self.tags       = list()
+        self.logsources = []
+        self.tags = []
 
         for cond in [c.replace(" ", "") for c in expr.split(",")]:
             if cond.startswith("level<="):
@@ -73,13 +73,11 @@ class SigmaRuleFilter:
                 return False    # User wants level restriction, but it's not possible here
 
             # Minimum level
-            if self.minlevel is not None:
-                if level < self.minlevel:
-                    return False
+        if self.minlevel is not None and level < self.minlevel:
+            return False
             # Maximum level
-            if self.maxlevel is not None:
-                if level > self.maxlevel:
-                    return False
+        if self.maxlevel is not None and level > self.maxlevel:
+            return False
 
         # Status
         if self.status is not None:

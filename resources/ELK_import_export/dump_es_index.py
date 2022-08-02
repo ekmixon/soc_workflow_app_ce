@@ -18,7 +18,7 @@ from es_config import *
 currentdir = os.path.dirname(os.path.abspath(__file__))
 
 def save_file(filename, text):
-    with open(os.path.normpath(currentdir +'/index/'+ filename), 'wb') as f:
+    with open(os.path.normpath(f'{currentdir}/index/{filename}'), 'wb') as f:
         if type(text) == type({}):
             f.write(json.dumps(text))
         else:
@@ -26,18 +26,15 @@ def save_file(filename, text):
 
 def dump_index(index_name, doc_type=None):
     if doc_type is None:
-        doc_type = index_name        
+        doc_type = index_name
     doc_id_list = es_dbc.get_all_doc_list(index_name)
-    i = 0 
-    count = len(doc_id_list)    
+    count = len(doc_id_list)
     doc_list = {}
     for doc_id in doc_id_list:
-        i += 1
         doc = es_dbc.get_doc_id(doc_id, index_name, doc_type)
         doc_list[doc_id] = doc
-        print i,'/',count
-     
-    save_file('{}_index.json'.format(index_name), doc_list)            
+        i += 1
+    save_file(f'{index_name}_index.json', doc_list)            
 
                 
 if __name__ == '__main__':

@@ -39,14 +39,11 @@ class ElasticsearchWildcardHandlingMixin(object):
         try:
             self.blacklist = self.keyword_blacklist.split(",")
         except AttributeError:
-            self.blacklist = list()
+            self.blacklist = []
 
     def containsWildcard(self, value):
         """Determine if value contains wildcard."""
-        if type(value) == str:
-            return self.reContainsWildcard(value)
-        else:
-            return False
+        return self.reContainsWildcard(value) if type(value) == str else False
 
     def fieldNameMapping(self, fieldname, value):
         """
@@ -55,10 +52,10 @@ class ElasticsearchWildcardHandlingMixin(object):
         """
         if fieldname not in self.blacklist and (
                 type(value) == list and any(map(self.containsWildcard, value)) \
-                or self.containsWildcard(value)
+                    or self.containsWildcard(value)
                 ):
             self.matchKeyword = True
-            return fieldname + "." + self.keyword_field
+            return f"{fieldname}.{self.keyword_field}"
         else:
             self.matchKeyword = False
             return fieldname
@@ -87,10 +84,7 @@ class ElasticsearchQuerystringBackend(ElasticsearchWildcardHandlingMixin, Single
         if result == "" or result.isspace():
             return '""'
         else:
-            if self.matchKeyword:   # don't quote search value on keyword field
-                return result
-            else:
-                return "\"%s\"" % result
+            return result if self.matchKeyword else "\"%s\"" % result
 
 class ElasticsearchDSLBackend(RulenameCommentMixin, ElasticsearchWildcardHandlingMixin, BaseBackend):
     """ElasticSearch DSL backend"""
@@ -154,29 +148,27 @@ class ElasticsearchDSLBackend(RulenameCommentMixin, ElasticsearchWildcardHandlin
         return self.generateNode(node.items)
 
     def generateListNode(self, node):
-        raise NotImplementedError("%s : (%s) Node type not implemented for this backend"%(self.title, 'generateListNode'))
+        raise NotImplementedError(
+            f"{self.title} : (generateListNode) Node type not implemented for this backend"
+        )
 
     def generateMapItemNode(self, node):
         key, value = node
         if type(value) not in (str, int, list):
-            raise TypeError("Map values must be strings, numbers or lists, not " + str(type(value)))
+            raise TypeError(
+                f"Map values must be strings, numbers or lists, not {str(type(value))}"
+            )
+
         if type(value) is list:
             res = {'bool': {'should': []}}
             for v in value:
                 key_mapped = self.fieldNameMapping(key, v)
-                if self.matchKeyword:   # searches against keyowrd fields are wildcard searches, phrases otherwise
-                    queryType = 'wildcard'
-                else:
-                    queryType = 'match_phrase'
-
+                queryType = 'wildcard' if self.matchKeyword else 'match_phrase'
                 res['bool']['should'].append({queryType: {key_mapped: v}})
             return res
         else:
             key_mapped = self.fieldNameMapping(key, value)
-            if self.matchKeyword:   # searches against keyowrd fields are wildcard searches, phrases otherwise
-                queryType = 'wildcard'
-            else:
-                queryType = 'match_phrase'
+            queryType = 'wildcard' if self.matchKeyword else 'match_phrase'
             return {queryType: {key_mapped: value}}
 
     def generateValueNode(self, node):
@@ -193,22 +185,19 @@ class ElasticsearchDSLBackend(RulenameCommentMixin, ElasticsearchWildcardHandlin
             if agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT:
                 if agg.groupfield is not None:
                     self.queries[-1]['aggs'] = {
-                        '%s_count'%(agg.groupfield or ""): {
-                            'terms': {
-                                'field': '%s'%(agg.groupfield or "")
-                            },
+                        f'{agg.groupfield or ""}_count': {
+                            'terms': {'field': f'{agg.groupfield or ""}'},
                             'aggs': {
                                 'limit': {
                                     'bucket_selector': {
-                                        'buckets_path': {
-                                            'count': '_count'
-                                        },
-                                        'script': 'params.count %s %s'%(agg.cond_op, agg.condition)
+                                        'buckets_path': {'count': '_count'},
+                                        'script': f'params.count {agg.cond_op} {agg.condition}',
                                     }
                                 }
-                            }
+                            },
                         }
                     }
+
             else:
                 for name, idx in agg.aggfuncmap.items():
                     if idx == agg.aggfunc:
@@ -220,16 +209,22 @@ class ElasticsearchDSLBackend(RulenameCommentMixin, ElasticsearchWildcardHandlin
         self.queries.append({'query': {'constant_score': {'filter': {}}}})
 
     def generateAfter(self, parsed):
-        dateField = 'date'
-        if self.sigmaconfig.config and 'dateField' in self.sigmaconfig.config:
-            dateField = self.sigmaconfig.config['dateField']
         if self.interval:
             if 'bool' not in self.queries[-1]['query']['constant_score']['filter']:
                 self.queries[-1]['query']['constant_score']['filter'] = {'bool': {'must': []}}
             if 'must' not in self.queries[-1]['query']['constant_score']['filter']['bool']:
                 self.queries[-1]['query']['constant_score']['filter']['bool']['must'] = []
 
-            self.queries[-1]['query']['constant_score']['filter']['bool']['must'].append({'range': {dateField: {'gte': 'now-%s'%self.interval}}})
+            dateField = (
+                self.sigmaconfig.config['dateField']
+                if self.sigmaconfig.config
+                and 'dateField' in self.sigmaconfig.config
+                else 'date'
+            )
+
+            self.queries[-1]['query']['constant_score']['filter']['bool'][
+                'must'
+            ].append({'range': {dateField: {'gte': f'now-{self.interval}'}}})
 
     def finalize(self):
         """
@@ -238,16 +233,17 @@ class ElasticsearchDSLBackend(RulenameCommentMixin, ElasticsearchWildcardHandlin
         """
         index = ''
         if self.indices is not None and len(self.indices) == 1:
-            index = '%s/'%self.indices[0]
+            index = f'{self.indices[0]}/'
 
-        if self.output_type == 'curl':
-            for query in self.queries:
-                return "\curl -XGET '%s/%s_search?pretty' -H 'Content-Type: application/json' -d'%s'" % (self.es, index, json.dumps(query, indent=2))
-        else:
-            if len(self.queries) == 1:
-                return json.dumps(self.queries[0], indent=2)
-            else:
-                return json.dumps(self.queries, indent=2)
+        if self.output_type != 'curl':
+            return (
+                json.dumps(self.queries[0], indent=2)
+                if len(self.queries) == 1
+                else json.dumps(self.queries, indent=2)
+            )
+
+        for query in self.queries:
+            return "\curl -XGET '%s/%s_search?pretty' -H 'Content-Type: application/json' -d'%s'" % (self.es, index, json.dumps(query, indent=2))
 
 class KibanaBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin):
     """Converts Sigma rule into Kibana JSON Configuration files (searches only)."""
@@ -262,14 +258,14 @@ class KibanaBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.kibanaconf = list()
+        self.kibanaconf = []
         self.indexsearch = set()
 
     def generate(self, sigmaparser):
         rulename = self.getRuleName(sigmaparser)
         description = sigmaparser.parsedyaml.setdefault("description", "")
 
-        columns = list()
+        columns = []
         try:
             for field in sigmaparser.parsedyaml["fields"]:
                 mapped = sigmaparser.config.get_fieldmapping(field).resolve_fieldname(field)
@@ -375,7 +371,7 @@ class XPackWatcherBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.watcher_alert = dict()
+        self.watcher_alert = {}
 
     def generate(self, sigmaparser):
         # get the details if this alert occurs
@@ -397,7 +393,13 @@ class XPackWatcherBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin)
             try:
                 condition_value = int(condition.parsedAgg.condition)
                 min_doc_count = {}
-                if condition.parsedAgg.cond_op == ">":
+                if condition.parsedAgg.cond_op == "<":
+                    alert_condition = { "lt": condition_value }
+                    order = "asc"
+                elif condition.parsedAgg.cond_op == "<=":
+                    alert_condition = { "lte": condition_value }
+                    order = "asc"
+                elif condition.parsedAgg.cond_op == ">":
                     alert_condition = { "gt": condition_value }
                     min_doc_count = { "min_doc_count": condition_value + 1 }
                     order = "desc"
@@ -405,64 +407,60 @@ class XPackWatcherBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin)
                     alert_condition = { "gte": condition_value }
                     min_doc_count = { "min_doc_count": condition_value }
                     order = "desc"
-                elif condition.parsedAgg.cond_op == "<":
-                    alert_condition = { "lt": condition_value }
-                    order = "asc"
-                elif condition.parsedAgg.cond_op == "<=":
-                    alert_condition = { "lte": condition_value }
-                    order = "asc"
                 else:
                     alert_condition = {"not_eq": 0}
 
-                agg_iter = list()
+                agg_iter = []
                 if condition.parsedAgg.aggfield is not None:    # e.g. ... count(aggfield) ...
                     agg = {
-                            "aggs": {
-                                "agg": {
-                                    "terms": {
-                                        "field": condition.parsedAgg.aggfield + ".keyword",
-                                        "size": 10,
-                                        "order": {
-                                            "_count": order
-                                            },
-                                        **min_doc_count
-                                        },
-                                    **agg
-                                    }
-                                }
+                        "aggs": {
+                            "agg": {
+                                "terms": {
+                                    "field": f"{condition.parsedAgg.aggfield}.keyword",
+                                    "size": 10,
+                                    "order": {"_count": order},
+                                    **min_doc_count,
+                                },
+                                **agg,
                             }
+                        }
+                    }
+
                     alert_value_location = "agg.buckets.0."
                     agg_iter.append("agg.buckets")
                 if condition.parsedAgg.groupfield is not None:    # e.g. ... by groupfield ...
                     agg = {
-                            "aggs": {
-                                "by": {
-                                    "terms": {
-                                        "field": condition.parsedAgg.groupfield + ".keyword",
-                                        "size": 10,
-                                        "order": {
-                                            "_count": order
-                                            },
-                                        **min_doc_count
-                                        },
-                                    **agg
-                                    }
-                                }
+                        "aggs": {
+                            "by": {
+                                "terms": {
+                                    "field": f"{condition.parsedAgg.groupfield}.keyword",
+                                    "size": 10,
+                                    "order": {"_count": order},
+                                    **min_doc_count,
+                                },
+                                **agg,
                             }
-                    alert_value_location = "by.buckets.0." + alert_value_location
-                    agg_iter.append("by.buckets")
-            except KeyError:
-                alert_condition = {"not_eq": 0}
-            except AttributeError:
-                alert_condition = {"not_eq": 0}
+                        }
+                    }
 
+                    alert_value_location = f"by.buckets.0.{alert_value_location}"
+                    agg_iter.append("by.buckets")
+            except (KeyError, AttributeError):
+                alert_condition = {"not_eq": 0}
             if agg != {}:
-                alert_value_location = "ctx.payload.aggregations." + alert_value_location + "doc_count"
-                agg_iter[0] = "aggregations." + agg_iter[0]
-                action_body = "Hits:\n"
-                action_body += "\n".join([
-                    ("{{#%s}}\n" + (2 * i * "-") + " {{key}} {{doc_count}}\n") % (agg_item) for i, agg_item in enumerate(agg_iter)
-                    ])
+                alert_value_location = (
+                    f"ctx.payload.aggregations.{alert_value_location}doc_count"
+                )
+
+                agg_iter[0] = f"aggregations.{agg_iter[0]}"
+                action_body = "Hits:\n" + "\n".join(
+                    [
+                        ("{{#%s}}\n" + (2 * i * "-") + " {{key}} {{doc_count}}\n")
+                        % (agg_item)
+                        for i, agg_item in enumerate(agg_iter)
+                    ]
+                )
+
                 action_body += "\n".join([
                     "{{/%s}}\n" % agg_item for agg_item in reversed(agg_iter)
                     ])
@@ -471,10 +469,24 @@ class XPackWatcherBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin)
                 action_body = "Hits:\n{{#ctx.payload.hits.hits}}"
                 try:    # extract fields if these are given in rule
                     fields = sigmaparser.parsedyaml['fields']
-                    max_field_len = max([len(field) for field in fields])
-                    action_body += "Hit on {{_source.@timestamp}}:\n" + "\n".join([
-                        ("%" + str(max_field_len) + "s = {{_source.%s}}") % (field, field) for field in fields
-                        ]) + (80 * "=") + "\n"
+                    max_field_len = max(len(field) for field in fields)
+                    action_body += (
+                        (
+                            "Hit on {{_source.@timestamp}}:\n"
+                            + "\n".join(
+                                [
+                                    (
+                                        f"%{str(max_field_len)}"
+                                        + "s = {{_source.%s}}"
+                                    )
+                                    % (field, field)
+                                    for field in fields
+                                ]
+                            )
+                        )
+                        + 80 * "="
+                    ) + "\n"
+
                 except KeyError:    # no fields given, extract all hits
                     action_body += "{{_source}}\n"
                     action_body += (80 * "=") + "\n"
@@ -502,12 +514,11 @@ class XPackWatcherBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixin)
                         }
             except KeyError:    # no mail address given, generate log action
                 action = {
-                        "logging-action": {
-                            "logging": {
-                                "text": action_subject + ": " + action_body
-                                }
-                            }
-                        }
+                    "logging-action": {
+                        "logging": {"text": f"{action_subject}: {action_body}"}
+                    }
+                }
+
 
             self.watcher_alert[rulename] = {
                               "trigger": {
@@ -570,7 +581,7 @@ class ElastalertBackend(MultiRuleOutputMixin, ElasticsearchQuerystringBackend):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.elastalert_alerts = dict()
+        self.elastalert_alerts = {}
         self.fields = []
 
     def generate(self, sigmaparser):
@@ -588,36 +599,42 @@ class ElastalertBackend(MultiRuleOutputMixin, ElasticsearchQuerystringBackend):
             index = "logstash-*"
         elif len(index) > 0:
             index = index[0]
-        #Init a rule number cpt in case there are several elastalert rules generated fron one Sigma rule
-        rule_number = 0
-        for parsed in sigmaparser.condparsed:
+        for rule_number, parsed in enumerate(sigmaparser.condparsed):
             #Static data
             rule_object = {
-                "name": rulename + "_" + str(rule_number),
+                "name": f"{rulename}_{str(rule_number)}",
                 "description": description,
                 "index": index,
                 "priority": self.convertLevel(level),
                 "realert": self.generateTimeframe(self.realert_time),
-                #"exponential_realert": self.generateTimeframe(self.expo_realert_time)
             }
+
             rule_object['filter'] = self.generateQuery(parsed)
 
             #Handle aggregation
             if parsed.parsedAgg:
-                if parsed.parsedAgg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT or parsed.parsedAgg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MIN or parsed.parsedAgg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MAX or parsed.parsedAgg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_AVG or parsed.parsedAgg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_SUM:
+                if parsed.parsedAgg.aggfunc in [
+                    sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT,
+                    sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MIN,
+                    sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MAX,
+                    sigma.parser.condition.SigmaAggregationParser.AGGFUNC_AVG,
+                    sigma.parser.condition.SigmaAggregationParser.AGGFUNC_SUM,
+                ]:
                     if parsed.parsedAgg.groupfield is not None:
-                        rule_object['query_key'] = parsed.parsedAgg.groupfield + ".keyword"
+                        rule_object['query_key'] = f"{parsed.parsedAgg.groupfield}.keyword"
                     rule_object['type'] = "metric_aggregation"
                     rule_object['buffer_time'] = interval
                     rule_object['doc_type'] = "_doc"
 
-                    if parsed.parsedAgg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT:
-                        rule_object['metric_agg_type'] = "cardinality"
-                    else:
-                        rule_object['metric_agg_type'] = parsed.parsedAgg.aggfunc_notrans
+                    rule_object['metric_agg_type'] = (
+                        "cardinality"
+                        if parsed.parsedAgg.aggfunc
+                        == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT
+                        else parsed.parsedAgg.aggfunc_notrans
+                    )
 
                     if parsed.parsedAgg.aggfield:
-                        rule_object['metric_agg_key'] = parsed.parsedAgg.aggfield + ".keyword"
+                        rule_object['metric_agg_key'] = f"{parsed.parsedAgg.aggfield}.keyword"
                     else:
                         rule_object['metric_agg_key'] = "_id"
 
@@ -653,8 +670,6 @@ class ElastalertBackend(MultiRuleOutputMixin, ElasticsearchQuerystringBackend):
             if len(rule_object['alert']) == 0:
                 rule_object['alert'].append('debug')
 
-            #Increment rule number
-            rule_number += 1
             self.elastalert_alerts[rule_object['name']] = rule_object
             #Clear fields
             self.fields = []
@@ -688,14 +703,19 @@ class ElastalertBackend(MultiRuleOutputMixin, ElasticsearchQuerystringBackend):
 
     def generateAggregation(self, agg):
         if agg:
-            if agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT or agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MIN or agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MAX or agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_AVG or agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_SUM:
+            if agg.aggfunc in [
+                sigma.parser.condition.SigmaAggregationParser.AGGFUNC_COUNT,
+                sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MIN,
+                sigma.parser.condition.SigmaAggregationParser.AGGFUNC_MAX,
+                sigma.parser.condition.SigmaAggregationParser.AGGFUNC_AVG,
+                sigma.parser.condition.SigmaAggregationParser.AGGFUNC_SUM,
+            ]:
                 return ""
-            else:
-                for name, idx in agg.aggfuncmap.items():
-                    if idx == agg.aggfunc:
-                        funcname = name
-                        break
-                raise NotImplementedError("%s : The '%s' aggregation operator is not yet implemented for this backend"%(self.title, funcname)) 
+            for name, idx in agg.aggfuncmap.items():
+                if idx == agg.aggfunc:
+                    funcname = name
+                    break
+            raise NotImplementedError("%s : The '%s' aggregation operator is not yet implemented for this backend"%(self.title, funcname)) 
 
     def convertLevel(self, level):
     	return {

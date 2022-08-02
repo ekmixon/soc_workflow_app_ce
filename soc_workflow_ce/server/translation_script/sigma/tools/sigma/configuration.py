@@ -23,18 +23,17 @@ from sigma.config.mapping import FieldMapping
 class SigmaConfiguration:
     """Sigma converter configuration. Contains field mappings and logsource descriptions"""
     def __init__(self, configyaml=None):
-        if configyaml == None:
+        if configyaml is None:
             self.config = None
-            self.fieldmappings = dict()
-            self.logsources = dict()
+            self.fieldmappings = {}
+            self.logsources = {}
             self.logsourcemerging = SigmaLogsourceConfiguration.MM_AND
             self.defaultindex = None
-            self.backend = None
         else:
             config = yaml.safe_load(configyaml)
             self.config = config
 
-            self.fieldmappings = dict()
+            self.fieldmappings = {}
             try:
                 for source, target in config['fieldmappings'].items():
                     self.fieldmappings[source] = FieldMapping(source, target)
@@ -53,8 +52,9 @@ class SigmaConfiguration:
             except KeyError:
                 self.defaultindex = None
 
-            self.logsources = list()
-            self.backend = None
+            self.logsources = []
+
+        self.backend = None
 
     def get_fieldmapping(self, fieldname):
         """Return mapped fieldname if mapping defined or field name given in parameter value"""
@@ -71,13 +71,12 @@ class SigmaConfiguration:
     def set_backend(self, backend):
         """Set backend. This is used by other code to determine target properties for index addressing"""
         self.backend = backend
-        if self.config != None:
-            if 'logsources' in self.config:
-                logsources = self.config['logsources']
-                if type(logsources) != dict:
-                    raise SigmaConfigParseError("Logsources must be a map")
-                for name, logsource in logsources.items():
-                    self.logsources.append(SigmaLogsourceConfiguration(logsource, self.defaultindex, name, self.logsourcemerging, self.get_indexfield()))
+        if self.config != None and 'logsources' in self.config:
+            logsources = self.config['logsources']
+            if type(logsources) != dict:
+                raise SigmaConfigParseError("Logsources must be a map")
+            for name, logsource in logsources.items():
+                self.logsources.append(SigmaLogsourceConfiguration(logsource, self.defaultindex, name, self.logsourcemerging, self.get_indexfield()))
 
     def get_indexfield(self):
         """Get index condition if index field name is configured"""
@@ -92,19 +91,24 @@ class SigmaLogsourceConfiguration:
     def __init__(self, logsource=None, defaultindex=None, name=None, mergemethod=MM_AND, indexfield=None):
         self.name = name
         self.indexfield = indexfield
-        if logsource == None:               # create empty object
+        if logsource is None:       # create empty object
             self.category = None
             self.product = None
             self.service = None
-            self.index = list()
+            self.index = []
             self.conditions = None
-        elif type(logsource) == list and all([isinstance(o, SigmaLogsourceConfiguration) for o in logsource]):      # list of SigmaLogsourceConfigurations: merge according to mergemethod
+        elif type(logsource) == list and all(
+            isinstance(o, SigmaLogsourceConfiguration) for o in logsource
+        ):      # list of SigmaLogsourceConfigurations: merge according to mergemethod
             # Merge category, product and service
-            categories = set([ ls.category for ls in logsource if ls.category != None ])
-            products = set([ ls.product for ls in logsource if ls.product != None ])
-            services = set([ ls.service for ls in logsource if ls.service != None])
+            categories = {ls.category for ls in logsource if ls.category != None}
+            products = {ls.product for ls in logsource if ls.product != None}
+            services = {ls.service for ls in logsource if ls.service != None}
             if len(categories) > 1 or len(products) > 1 or len(services) > 1:
-                raise ValueError("Merged SigmaLogsourceConfigurations must have disjunct categories (%s), products (%s) and services (%s)" % (str(categories), str(products), str(services)))
+                raise ValueError(
+                    f"Merged SigmaLogsourceConfigurations must have disjunct categories ({categories}), products ({products}) and services ({services})"
+                )
+
 
             try:
                 self.category = categories.pop()
@@ -120,11 +124,13 @@ class SigmaLogsourceConfiguration:
                 self.service = None
 
             # Merge all index patterns
-            self.index = list(set([index for ls in logsource for index in ls.index]))       # unique(flat(logsources.index))
-            if len(self.index) == 0 and defaultindex is not None:   # if no index pattern matched and default index is present: use default index
+            self.index = list({index for ls in logsource for index in ls.index})
+            if not self.index and defaultindex is not None:   # if no index pattern matched and default index is present: use default index
                 if type(defaultindex) == str:
                     self.index = [defaultindex]
-                elif type(defaultindex) == list and all([type(i) == str for i in defaultindex]):
+                elif type(defaultindex) == list and all(
+                    type(i) == str for i in defaultindex
+                ):
                     self.index = defaultindex
                 else:
                     raise TypeError("Default index must be string or list of strings")
@@ -146,14 +152,11 @@ class SigmaLogsourceConfiguration:
             for ls in logsource:
                 if ls.conditions != None:
                     cond.add(ls.conditions)
-            if len(cond) > 0:
-                self.conditions = cond
-            else:
-                self.conditions = None
+            self.conditions = cond if len(cond) > 0 else None
         elif type(logsource) == dict:       # create logsource configuration from parsed yaml
             if 'category' in logsource and type(logsource['category']) != str \
-                    or 'product' in logsource and type(logsource['product']) != str \
-                    or 'service' in logsource and type(logsource['service']) != str:
+                        or 'product' in logsource and type(logsource['product']) != str \
+                        or 'service' in logsource and type(logsource['service']) != str:
                 raise SigmaConfigParseError("Logsource category, product or service must be a string")
             try:
                 self.category = logsource['category']
@@ -167,19 +170,22 @@ class SigmaLogsourceConfiguration:
                 self.service = logsource['service']
             except KeyError:
                 self.service = None
-            if self.category == None and self.product == None and self.service == None:
+            if (
+                self.category is None
+                and self.product is None
+                and self.service is None
+            ):
                 raise SigmaConfigParseError("Log source definition will not match")
 
             if 'index' in logsource:
                 index = logsource['index']
                 if type(index) not in (str, list):
                     raise SigmaConfigParseError("Logsource index must be string or list of strings")
-                if type(index) == list and not all([type(index) == str for index in logsource['index']]):
+                if type(index) == list and any(
+                    type(index) != str for index in logsource['index']
+                ):
                     raise SigmaConfigParseError("Logsource index patterns must be strings")
-                if type(index) == list:
-                    self.index = index
-                else:
-                    self.index = [ index ]
+                self.index = index if type(index) == list else [ index ]
             else:
                 # no default index handling here - this branch is executed if log source definitions are parsed from
                 # config and these must not necessarily contain an index definition. A valid index may later be result
@@ -202,7 +208,7 @@ class SigmaLogsourceConfiguration:
         """Match log source definition against given criteria, None = ignore"""
         searched = 0
         for searchval, selfval in zip((category, product, service), (self.category, self.product, self.service)):
-            if searchval == None and selfval != None:
+            if searchval is None and selfval != None:
                 return False
             if selfval != None:
                 searched += 1
@@ -222,4 +228,4 @@ class SigmaLogsourceConfiguration:
             return None
 
     def __str__(self):
-        return "[ LogSourceConfiguration: %s %s %s indices: %s ]" % (self.category, self.product, self.service, str(self.index))
+        return f"[ LogSourceConfiguration: {self.category} {self.product} {self.service} indices: {str(self.index)} ]"

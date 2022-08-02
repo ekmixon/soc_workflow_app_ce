@@ -31,12 +31,17 @@ def getAllSubclasses(cls):
 def getBackendList():
     """Return list of backend classes"""
     path = os.path.dirname(__file__)
-    backend_classes = list()
+    backend_classes = []
     for finder, name, ispkg in pkgutil.iter_modules([ path ]):
-        module = importlib.import_module("." + name, __package__)
-        for name, cls in vars(module).items():
-            if type(cls) == type and issubclass(cls, BaseBackend) and cls.active:
-                backend_classes.append(cls)
+        module = importlib.import_module(f".{name}", __package__)
+        backend_classes.extend(
+            cls
+            for cls in vars(module).values()
+            if type(cls) == type
+            and issubclass(cls, BaseBackend)
+            and cls.active
+        )
+
     return backend_classes
 
 def getBackendDict():

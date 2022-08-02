@@ -39,7 +39,7 @@ class XPackWatcherSPBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixi
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.watcher_alert = dict()
+        self.watcher_alert = {}
 
     def generate(self, sigmaparser):
         # get the details if this alert occurs
@@ -54,7 +54,6 @@ class XPackWatcherSPBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixi
 
         # creating condition
         indices = sigmaparser.get_logsource().index
-        
 ##        message = "title: {title}\ndescription: {description}\nreferences: {references}"#\nquery: {query}'
 ##        message.format(
 ##                title=title,
@@ -63,108 +62,108 @@ class XPackWatcherSPBackend(ElasticsearchQuerystringBackend, MultiRuleOutputMixi
 ##                #query=result
 ##                )
         message = [
-            "title: {}".format(title),
-            "description: {}".format(description),
-            "references: {}".format(', '.join(['<a href="{}">link_{}</a>'.format(x,i+1) for i,x in enumerate(references)])),
-            ]
+            f"title: {title}",
+            f"description: {description}",
+            "references: {}".format(
+                ', '.join(
+                    [
+                        f'<a href="{x}">link_{i + 1}</a>'
+                        for i, x in enumerate(references)
+                    ]
+                )
+            ),
+        ]
+
         message = '<br/>'.join(message)
+        actions = {
+            "index_payload": {
+              "condition": {
+                "always": {}
+              },
+              "transform": {
+                "chain": [
+                  {
+                    "script": {
+                      "source": "def id_list = []; id_list = ctx.payload.main.hits.hits.stream().map(b -> b._id).collect(Collectors.toList()); def execDT = Instant.ofEpochMilli(ctx.execution_time.getMillis()); def startDT = execDT.minus(ctx.metadata.interval_int, ChronoUnit.MINUTES); def endDT = execDT.plus(ctx.metadata.interval_int, ChronoUnit.MINUTES); String enc_query = String.join('\" \"', id_list); enc_query = '_id:(\"' +enc_query +'\")';enc_query=enc_query.replace(' ','%20');enc_query=enc_query.replace('\"','%22'); enc_query=enc_query.replace('\\\\','%5C'); String discover_url = ctx.metadata.kibana_host+'/app/kibana#/discover?_g=(refreshInterval:(pause:!t,value:0),time:(from:\\'' + startDT + '\\',absolute:quick,to:\\'' + endDT + '\\'))&_a=(columns:!(_source),index:\\''+ctx.metadata.index_uid+'\\',interval:auto,query:(language:lucene,query:\\'' + enc_query + '\\'),sort:!(\\'@timestamp\\',desc))'; return ['resource.URL': discover_url,'@timestamp': System.currentTimeMillis(), 'message': ctx.metadata.message, 'ecs_version' : '1.0.0','device.vendor' : 'SOCPrime','device.product': 'Sigma', 'event.type' : 'alert','event.severity' : '7','event.labels' : 'Queued','event.count': ctx.payload.main.hits.hits.length, 'event.timestamp': ctx.execution_time]",#.format(kibana_host="SET-KIBANA-HOST:5601", #self.kibana_host,
+              #     index_uid="SET-INDEX-PATTERN-ID" #self.index_uid
+              #      ),                 
+                      "lang": "painless"
+                    }
+                  }
+                ]
+              },
+              "index": {
+                "index": "<alerts_ecs-{now/d}>",
+                "doc_type": "_doc"
+
+              }
+            }
+          }            
+
+
         #print(message)
 
         for condition in sigmaparser.condparsed:
             result = self.generateNode(condition.parsedSearch)
 
-            actions = {
-                "index_payload": {
-                  "condition": {
-                    "always": {}
-                  },
-                  "transform": {
-                    "chain": [
-                      {
-                        "script": {
-                          "source": "def id_list = []; id_list = ctx.payload.main.hits.hits.stream().map(b -> b._id).collect(Collectors.toList()); def execDT = Instant.ofEpochMilli(ctx.execution_time.getMillis()); def startDT = execDT.minus(ctx.metadata.interval_int, ChronoUnit.MINUTES); def endDT = execDT.plus(ctx.metadata.interval_int, ChronoUnit.MINUTES); String enc_query = String.join('\" \"', id_list); enc_query = '_id:(\"' +enc_query +'\")';enc_query=enc_query.replace(' ','%20');enc_query=enc_query.replace('\"','%22'); enc_query=enc_query.replace('\\\\','%5C'); String discover_url = ctx.metadata.kibana_host+'/app/kibana#/discover?_g=(refreshInterval:(pause:!t,value:0),time:(from:\\'' + startDT + '\\',absolute:quick,to:\\'' + endDT + '\\'))&_a=(columns:!(_source),index:\\''+ctx.metadata.index_uid+'\\',interval:auto,query:(language:lucene,query:\\'' + enc_query + '\\'),sort:!(\\'@timestamp\\',desc))'; return ['resource.URL': discover_url,'@timestamp': System.currentTimeMillis(), 'message': ctx.metadata.message, 'ecs_version' : '1.0.0','device.vendor' : 'SOCPrime','device.product': 'Sigma', 'event.type' : 'alert','event.severity' : '7','event.labels' : 'Queued','event.count': ctx.payload.main.hits.hits.length, 'event.timestamp': ctx.execution_time]",#.format(kibana_host="SET-KIBANA-HOST:5601", #self.kibana_host,
-                  #     index_uid="SET-INDEX-PATTERN-ID" #self.index_uid
-                  #      ),                 
-                          "lang": "painless"
-                        }
-                      }
-                    ]
-                  },
-                  "index": {
-                    "index": "<alerts_ecs-{now/d}>",
-                    "doc_type": "_doc"
-            
-                  }
-                }
-              }            
-            
-
             self.watcher_alert[rulename] = {
-                              "trigger": {
-                                "schedule": {
-                                  "interval": '{}m'.format(interval)  # how often the watcher should check
-                                }
-                              },
-                              "input": {
-                                    "chain": {
-                                      "inputs": [
-                                        {
-                                          "main": {
-                                            "search": {
-                                              "request": {
-                                                "search_type": "query_then_fetch",
-                                                "indices": indices,#["<ecs-proxy-{now/d}>","*"],
-                                                "types": [],
-                                                "body": {
-                                                  "query": {
+                "trigger": {"schedule": {"interval": f'{interval}m'}},
+                "input": {
+                    "chain": {
+                        "inputs": [
+                            {
+                                "main": {
+                                    "search": {
+                                        "request": {
+                                            "search_type": "query_then_fetch",
+                                            "indices": indices,  # ["<ecs-proxy-{now/d}>","*"],
+                                            "types": [],
+                                            "body": {
+                                                "query": {
                                                     "bool": {
-                                                      "must": [
-                                                        {
-                                                          "query_string": {
-                                                            "query": "{{ctx.metadata.query}}",
-                                                            "analyze_wildcard": True
-                                                          }
-                                                        },
-                                                        {
-                                                          "range": {
-                                                            "@timestamp": {
-                                                              "gte": "{{ctx.metadata.interval}}"
-                                                            }
-                                                          }
-                                                        }
-                                                      ]
+                                                        "must": [
+                                                            {
+                                                                "query_string": {
+                                                                    "query": "{{ctx.metadata.query}}",
+                                                                    "analyze_wildcard": True,
+                                                                }
+                                                            },
+                                                            {
+                                                                "range": {
+                                                                    "@timestamp": {
+                                                                        "gte": "{{ctx.metadata.interval}}"
+                                                                    }
+                                                                }
+                                                            },
+                                                        ]
                                                     }
-                                                  }
                                                 }
-                                              }
-                                            }
-                                          }
+                                            },
                                         }
-                                      ]
                                     }
-                                  },                                
-                              "condition": {
-                                  "compare": {
-                                  "ctx.payload.main.hits.total": {
-                                    "gt": 0
-                                  }
                                 }
-                              },
-                              "actions": { **actions },
-                              "metadata": {
-                                    "kibana_host":"https://SET-KIBANA-HOST:5601",
-                                    "index_uid":"SET-INDEX-PATTERN-ID",                            
-                                    "query": result,    # this is where the elasticsearch query syntax goes
-                                    "interval": 'now-{}m'.format(interval),
-                                    "interval_int": interval, #'now-{}m'.format(interval),
-                                    "message": message
-                                    }
                             }
+                        ]
+                    }
+                },
+                "condition": {
+                    "compare": {"ctx.payload.main.hits.total": {"gt": 0}}
+                },
+                "actions": {**actions},
+                "metadata": {
+                    "kibana_host": "https://SET-KIBANA-HOST:5601",
+                    "index_uid": "SET-INDEX-PATTERN-ID",
+                    "query": result,
+                    "interval": f'now-{interval}m',
+                    "interval_int": interval,
+                    "message": message,
+                },
+            }
 
     def finalize(self):
-        result = ""
-        for rulename, rule in self.watcher_alert.items():
-            result += json.dumps(rule, indent=2) + "\n"  # indent!!!!!!!!!!!
-        return result
+        return "".join(
+            json.dumps(rule, indent=2) + "\n"
+            for rulename, rule in self.watcher_alert.items()
+        )
 
 

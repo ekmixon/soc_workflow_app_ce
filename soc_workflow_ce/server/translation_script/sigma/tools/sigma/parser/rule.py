@@ -21,8 +21,8 @@ from .condition import SigmaConditionTokenizer, SigmaConditionParser, ConditionA
 class SigmaParser:
     """Parse a Sigma rule (definitions, conditions and aggregations)"""
     def __init__(self, sigma, config):
-        self.definitions = dict()
-        self.values = dict()
+        self.definitions = {}
+        self.values = {}
         self.config = config
         self.parsedyaml = sigma
         self.parse_sigma()
@@ -38,16 +38,18 @@ class SigmaParser:
 
         try:    # tokenization
             conditions = self.parsedyaml["detection"]["condition"]
-            self.condtoken = list()     # list of tokenized conditions
+            self.condtoken = []
             if type(conditions) == str:
                 self.condtoken.append(SigmaConditionTokenizer(conditions))
             elif type(conditions) == list:
-                for condition in conditions:
-                    self.condtoken.append(SigmaConditionTokenizer(condition))
+                self.condtoken.extend(
+                    SigmaConditionTokenizer(condition) for condition in conditions
+                )
+
         except KeyError:
             raise SigmaParseError("No condition found")
 
-        self.condparsed = list()        # list of parsed conditions
+        self.condparsed = []
         for tokens in self.condtoken:
             condparsed = SigmaConditionParser(self, tokens)
             self.condparsed.append(condparsed)
@@ -64,11 +66,7 @@ class SigmaParser:
             raise SigmaParseError("Expected map or list, got type %s: '%s'" % (type(definition), str(definition)))
 
         if type(definition) == list:    # list of values or maps
-            if condOverride:    # condition given through rule detection condition, e.g. 1 of x
-                cond = condOverride()
-            else:               # no condition given, use default from spec
-                cond = ConditionOR()
-
+            cond = condOverride() if condOverride else ConditionOR()
             subcond = None
             for value in definition:
                 if type(value) in (str, int):
@@ -81,7 +79,7 @@ class SigmaParser:
             cond = ConditionAND()
             for key, value in definition.items():
                 mapping = self.config.get_fieldmapping(key)
-                if value == None:
+                if value is None:
                     fields = mapping.resolve_fieldname(key)
                     if type(fields) == str:
                         fields = [ fields ]

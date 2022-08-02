@@ -20,7 +20,7 @@ from .exceptions import SigmaConfigParseError
 # Field Mapping Definitions
 def FieldMapping(source, target=None):
     """Determines target type and instantiate appropriate mapping type"""
-    if target == None:
+    if target is None:
         return SimpleFieldMapping(source, source)
     elif type(target) == str:
         return SimpleFieldMapping(source, target)
@@ -73,31 +73,30 @@ class ConditionalFieldMapping(SimpleFieldMapping):
     def __init__(self, source, target):
         """Init table between condition field names and values"""
         super().__init__(source, target)
-        self.conditions = dict()    # condition field -> condition value -> target fields
+        self.conditions = {}
         self.default = None
         for condition, target in self.target.items():
             try:                    # key contains condition (field=value)
                 field, value = condition.split("=")
                 self.add_condition(field, value, target)
             except ValueError as e:      # no, condition - "default" expected
-                if condition == "default":
-                    if self.default == None:
-                        if type(target) == str:
-                            self.default = [ target ]
-                        elif type(target) == list:
-                            self.default = target
-                        else:
-                            raise SigmaConfigParseError("Default mapping must be single value or list")
-                    else:
-                        raise SigmaConfigParseError("Conditional field mapping can have only one default value, use list for multiple target mappings")
-                else:
+                if condition != "default":
                     raise SigmaConfigParseError("Expected condition or default") from e
+                if self.default is None:
+                    if type(target) == str:
+                        self.default = [ target ]
+                    elif type(target) == list:
+                        self.default = target
+                    else:
+                        raise SigmaConfigParseError("Default mapping must be single value or list")
+                else:
+                    raise SigmaConfigParseError("Conditional field mapping can have only one default value, use list for multiple target mappings")
 
     def add_condition(self, field, value, target):
         if field not in self.conditions:
-            self.conditions[field] = dict()
+            self.conditions[field] = {}
         if value not in self.conditions[field]:
-            self.conditions[field][value] = list()
+            self.conditions[field][value] = []
         if type(target) == str:
             self.conditions[field][value].append(target)
         elif type(target) == list:
@@ -112,9 +111,8 @@ class ConditionalFieldMapping(SimpleFieldMapping):
                 for condvalue in self.conditions[condfield]:
                     if condvalue in rulefieldvalues:
                         targets.update(self.conditions[condfield][condvalue])
-        if len(targets) == 0:       # no matching condition, try with default mapping
-            if self.default != None:
-                targets = self.default
+        if not targets and self.default != None:
+            targets = self.default
 
         if len(targets) == 1:     # result set contains only one target, return mapped item (like SimpleFieldMapping)
             return (targets.pop(), value)
@@ -127,7 +125,4 @@ class ConditionalFieldMapping(SimpleFieldMapping):
             return (key, value)
 
     def resolve_fieldname(self, fieldname):
-        if self.default != None:
-            return self.default
-        else:
-            return fieldname
+        return self.default if self.default != None else fieldname

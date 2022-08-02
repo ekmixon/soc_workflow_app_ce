@@ -33,11 +33,7 @@ class ES_DB_Connector(object):
             }
         try:
             res = self.es.search(index=index, body=query)
-            sigma_doc_list = []
-            for hit in res['hits']['hits']:
-                sigma_doc_list.append(hit['_id'])
-            
-            return sigma_doc_list
+            return [hit['_id'] for hit in res['hits']['hits']]
         except:
             raise   
    
@@ -48,7 +44,7 @@ class ES_DB_Connector(object):
             res = self.es.get(index=index, doc_type=doc_type, id=doc_id)
             return res["_source"]
         except:
-            raise Exception('Not found doc with id: {}'.format(doc_id))      
+            raise Exception(f'Not found doc with id: {doc_id}')      
                           
     def insert_doc(self, index, doc_id, doc):
         res = self.es.index(index=index, doc_type=index, id=doc_id, body=doc)

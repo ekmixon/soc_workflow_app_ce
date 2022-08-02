@@ -44,9 +44,7 @@ class QRadarBackend(SingleTextQueryBackend):
     def cleanKey(self, key):
         if " " in key:
             key = "\"%s\"" % (key)
-            return key
-        else:
-            return key
+        return key
 
     def generateNode(self, node):
         if type(node) == sigma.parser.condition.ConditionAND:
@@ -68,7 +66,9 @@ class QRadarBackend(SingleTextQueryBackend):
         elif type(node) == list:
             return self.generateListNode(node)
         else:
-            raise TypeError("Node type %s was not expected in Sigma parse tree" % (str(type(node))))
+            raise TypeError(
+                f"Node type {str(type(node))} was not expected in Sigma parse tree"
+            )
 
 
     def generateMapItemNode(self, node):
@@ -76,7 +76,7 @@ class QRadarBackend(SingleTextQueryBackend):
         if self.mapListsSpecialHandling == False and type(value) in (str, int, list) or self.mapListsSpecialHandling == True and type(value) in (str, int):
             if type(value) == str and "*" in value:
                 value = value.replace("*", "%")
-                return "%s ilike %s" % (self.cleanKey(key), self.generateValueNode(value, True))
+                return f"{self.cleanKey(key)} ilike {self.generateValueNode(value, True)}"
             elif type(value) in (str, int):
                 return self.mapExpression % (self.cleanKey(key), self.generateValueNode(value, True))
             else:
@@ -84,16 +84,24 @@ class QRadarBackend(SingleTextQueryBackend):
         elif type(value) == list:
             return self.generateMapItemListNode(key, value)
         else:
-            raise TypeError("Backend does not support map values of type " + str(type(value)))
+            raise TypeError(
+                f"Backend does not support map values of type {str(type(value))}"
+            )
 
     def generateMapItemListNode(self, key, value):
-        itemslist = list()
+        itemslist = []
         for item in value:
             if type(item) == str and "*" in item:
                 item = item.replace("*", "%")
-                itemslist.append('%s ilike %s' % (self.cleanKey(key), self.generateValueNode(item, True)))
+                itemslist.append(
+                    f'{self.cleanKey(key)} ilike {self.generateValueNode(item, True)}'
+                )
+
             else:
-                itemslist.append('%s = %s' % (self.cleanKey(key), self.generateValueNode(item, True)))
+                itemslist.append(
+                    f'{self.cleanKey(key)} = {self.generateValueNode(item, True)}'
+                )
+
         return '('+" or ".join(itemslist)+')'
 
     def generateValueNode(self, node, keypresent):
@@ -109,18 +117,22 @@ class QRadarBackend(SingleTextQueryBackend):
         return self.notNullExpression % (node.item)
 
     def generateAggregation(self, agg):
-        if agg == None:
+        if agg is None:
             return ""
         if agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_NEAR:
             raise NotImplementedError("The 'near' aggregation operator is not yet implemented for this backend")
-        if agg.groupfield == None:
-            self.qradarPrefixAgg = "SELECT %s(%s) as agg_val from %s where" % (agg.aggfunc_notrans, agg.aggfield, self.aql_database)
-            self.qradarSuffixAgg = " group by %s having agg_val %s %s" % (agg.aggfield, agg.cond_op, agg.condition)
-            return self.qradarPrefixAgg, self.qradarSuffixAgg
+        if agg.groupfield is None:
+            self.qradarPrefixAgg = f"SELECT {agg.aggfunc_notrans}({agg.aggfield}) as agg_val from {self.aql_database} where"
+
+            self.qradarSuffixAgg = f" group by {agg.aggfield} having agg_val {agg.cond_op} {agg.condition}"
+
         else:
-            self.qradarPrefixAgg = " SELECT %s(%s) as agg_val from %s where " % (agg.aggfunc_notrans, agg.aggfield, self.aql_database)
-            self.qradarSuffixAgg = " group by %s having agg_val %s %s" % (agg.groupfield, agg.cond_op, agg.condition)
-            return self.qradarPrefixAgg, self.qradarSuffixAgg
+            self.qradarPrefixAgg = f" SELECT {agg.aggfunc_notrans}({agg.aggfield}) as agg_val from {self.aql_database} where "
+
+            self.qradarSuffixAgg = f" group by {agg.groupfield} having agg_val {agg.cond_op} {agg.condition}"
+
+
+        return self.qradarPrefixAgg, self.qradarSuffixAgg
 
     def generate(self, sigmaparser):
         """Method is called for each sigma rule and receives the parsed rule (SigmaParser)"""
@@ -146,7 +158,10 @@ class QRadarBackend(SingleTextQueryBackend):
             aql_database = "flows"
         else:
             aql_database = "events"
-        qradarPrefix = "SELECT UTF8(payload) as search_payload from %s where " % (aql_database)
+        qradarPrefix = (
+            f"SELECT UTF8(payload) as search_payload from {aql_database} where "
+        )
+
         if parsed.parsedAgg:
             (qradarPrefix, qradarSuffixAgg) = self.generateAggregation(parsed.parsedAgg)
             result = qradarPrefix + result

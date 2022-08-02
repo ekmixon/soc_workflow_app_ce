@@ -44,16 +44,12 @@ class Error(Exception):
 
     def __init__(self, error_code=0, msg=''):
 
-        if not self.errors_dict.has_key(error_code):
-            self.error_code = 0
-        else:
-            self.error_code = error_code
-
+        self.error_code = error_code if self.errors_dict.has_key(error_code) else 0
         self.db_error_code = self.errors_dict[error_code]['db_code']
         self.msg = self.errors_dict[error_code]['msg']
 
         if msg > '':
-            self.msg = self.msg + ': ' + msg
+            self.msg = f'{self.msg}: {msg}'
 
     def __str__(self):
         return repr(self.msg)

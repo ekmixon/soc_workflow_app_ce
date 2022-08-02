@@ -48,15 +48,16 @@ class SumoLogicBackend(SingleTextQueryBackend):
     mapListValueExpression = "%s IN %s"
 
     def generateAggregation(self, agg):
-        if agg == None:
+        if agg is None:
             return ""
         if agg.aggfunc == sigma.parser.condition.SigmaAggregationParser.AGGFUNC_NEAR:
             raise NotImplementedError("The 'near' aggregation operator is not yet implemented for this backend")
-        if agg.groupfield == None:
+        if agg.groupfield is None:
             #return " | %s(%s) | when _count %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.cond_op, agg.condition)
-            return " | %s(%s) as val | when val %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.cond_op, agg.condition)
+            return f' | {agg.aggfunc_notrans}({agg.aggfield or ""}) as val | when val {agg.cond_op} {agg.condition}'
+
         else:
-            return " | %s(%s) as val by %s | when val %s %s" % (agg.aggfunc_notrans, agg.aggfield or "", agg.groupfield or "", agg.cond_op, agg.condition)
+            return f' | {agg.aggfunc_notrans}({agg.aggfield or ""}) as val by {agg.groupfield or ""} | when val {agg.cond_op} {agg.condition}'
 
 # TimeFrame condition / within timeframe
 # condition | timeslice 5m | count_distinct(f1) as val by f2 | where val > 5

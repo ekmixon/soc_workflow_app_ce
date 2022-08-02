@@ -27,7 +27,7 @@ class BackendOptions(dict):
         * key=value: self{key} = value
         * key: self{key} = True
         """
-        if options == None:
+        if options is None:
             return
         for option in options:
             parsed = option.split("=", 1)
@@ -106,7 +106,9 @@ class BaseBackend:
         elif type(node) == list:
             return self.generateListNode(node)
         else:
-            raise TypeError("Node type %s was not expected in Sigma parse tree" % (str(type(node))))
+            raise TypeError(
+                f"Node type {str(type(node))} was not expected in Sigma parse tree"
+            )
 
     def generateANDNode(self, node):
         raise NotImplementedError("Node type not implemented for this backend")
@@ -172,36 +174,30 @@ class SingleTextQueryBackend(RulenameCommentMixin, BaseBackend, QuoteCharMixin):
 
     def generateANDNode(self, node):
         generated = [ self.generateNode(val) for val in node ]
-        filtered = [ g for g in generated if g is not None ]
-        if filtered:
+        if filtered := [g for g in generated if g is not None]:
             return self.andToken.join(filtered)
         else:
             return None
 
     def generateORNode(self, node):
         generated = [ self.generateNode(val) for val in node ]
-        filtered = [ g for g in generated if g is not None ]
-        if filtered:
+        if filtered := [g for g in generated if g is not None]:
             return self.orToken.join(filtered)
         else:
             return None
 
     def generateNOTNode(self, node):
         generated = self.generateNode(node.item)
-        if generated is not None:
-            return self.notToken + generated
-        else:
-            return None
+        return self.notToken + generated if generated is not None else None
 
     def generateSubexpressionNode(self, node):
-        generated = self.generateNode(node.items)
-        if generated:
+        if generated := self.generateNode(node.items):
             return self.subExpression % generated
         else:
             return None
 
     def generateListNode(self, node):
-        if not set([type(value) for value in node]).issubset({str, int}):
+        if not {type(value) for value in node}.issubset({str, int}):
             raise TypeError("List values must be strings or numbers")
         return self.listExpression % (self.listSeparator.join([self.generateNode(value) for value in node]))
 
@@ -214,7 +210,9 @@ class SingleTextQueryBackend(RulenameCommentMixin, BaseBackend, QuoteCharMixin):
         elif type(value) == list:
             return self.generateMapItemListNode(transformed_fieldname, value)
         else:
-            raise TypeError("Backend does not support map values of type " + str(type(value)))
+            raise TypeError(
+                f"Backend does not support map values of type {str(type(value))}"
+            )
 
     def generateMapItemListNode(self, fieldname, value):
         return self.mapListValueExpression % (fieldname, self.generateNode(value))

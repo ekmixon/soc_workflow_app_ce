@@ -79,16 +79,15 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
             val = re.sub('([".^$]|\\\\(?![*?]))', '\\\\\g<1>', val)
             val = re.sub('\\*', '.*', val)
             val = re.sub('\\?', '.', val)
-        else:                           # value possibly only starts and/or ends with *, use prefix/postfix match
-            if val.endswith("*") and val.startswith("*"):
-                op = "contains"
-                val = self.cleanValue(val[1:-1])
-            elif val.endswith("*"):
-                op = "startswith"
-                val = self.cleanValue(val[:-1])
-            elif val.startswith("*"):
-                op = "endswith"
-                val = self.cleanValue(val[1:])
+        elif val.endswith("*") and val.startswith("*"):
+            op = "contains"
+            val = self.cleanValue(val[1:-1])
+        elif val.endswith("*"):
+            op = "startswith"
+            val = self.cleanValue(val[:-1])
+        elif val.startswith("*"):
+            op = "endswith"
+            val = self.cleanValue(val[1:])
 
         return "%s \"%s\"" % (op, val)
 
@@ -113,12 +112,10 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
     def decompose_user(self, src_field, src_value):
         """Decompose domain\\user User field of Sysmon events into ATP InitiatingProcessAccountDomain and InititatingProcessAccountName."""
         reUser = re.compile("^(.*?)\\\\(.*)$")
-        m = reUser.match(src_value)
-        if m:
-            domain, user = m.groups()
-            return (("InitiatingProcessAccountDomain", domain), ("InititatingProcessAccountName", user))
-        else:   # assume only user name is given if backslash is missing
+        if not (m := reUser.match(src_value)):
             return (("InititatingProcessAccountName", src_value),)
+        domain, user = m.groups()
+        return (("InitiatingProcessAccountDomain", domain), ("InititatingProcessAccountName", user))
 
     def generate(self, sigmaparser):
         self.table = None
@@ -134,7 +131,7 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
     def generateBefore(self, parsed):
         if self.table is None:
             raise NotSupportedError("No WDATP table could be determined from Sigma rule")
-        return "%s | where " % self.table
+        return f"{self.table} | where "
 
     def generateMapItemNode(self, node):
         """
@@ -149,7 +146,7 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
         elif key == "EventID":            # EventIDs are not reflected in condition but in table selection
             if self.product == "windows":
                 if self.service == "sysmon" and value == 1 \
-                    or self.service == "security" and value == 4688:    # Process Execution
+                        or self.service == "security" and value == 4688:    # Process Execution
                     self.table = "ProcessCreationEvents"
                     return None
                 elif self.service == "sysmon" and value == 3:      # Network Connection
@@ -165,7 +162,7 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
                     self.table = "FileCreationEvents"
                     return None
                 elif self.service == "sysmon" and value == 13 \
-                    or self.service == "security" and value == 4657:    # Set Registry Value
+                        or self.service == "security" and value == 4657:    # Set Registry Value
                     self.table = "RegistryEvents"
                     return "ActionType == \"RegistryValueSet\""
                 elif self.service == "security" and value == 4624:
@@ -183,12 +180,11 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
                 elif callable(mapping):
                     conds = mapping(key, value)
                     return self.generateSubexpressionNode(
-                            self.generateANDNode(
-                                [cond for cond in mapping(key, value)]
-                                )
-                            )
+                        self.generateANDNode(list(mapping(key, value)))
+                    )
+
             elif len(mapping) == 2:
-                result = list()
+                result = []
                 for mapitem, val in zip(mapping, node):     # iterate mapping and mapping source value synchronously over key and value
                     if type(mapitem) == str:
                         result.append(mapitem)
@@ -196,6 +192,9 @@ class WindowsDefenderATPBackend(SingleTextQueryBackend):
                         result.append(mapitem(val))
                 return "{} {}".format(*result)
             else:
-                raise TypeError("Backend does not support map values of type " + str(type(value)))
+                raise TypeError(
+                    f"Backend does not support map values of type {str(type(value))}"
+                )
+
 
         return super().generateMapItemNode(node)

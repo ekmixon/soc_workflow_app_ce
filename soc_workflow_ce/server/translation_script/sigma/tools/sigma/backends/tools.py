@@ -46,14 +46,17 @@ class FieldnameListBackend(BaseBackend):
         return self.generateNode(node.items)
 
     def generateListNode(self, node):
-        if not set([type(value) for value in node]).issubset({str, int}):
+        if not {type(value) for value in node}.issubset({str, int}):
             raise TypeError("List values must be strings or numbers")
         return [self.generateNode(value) for value in node]
 
     def generateMapItemNode(self, node):
         key, value = node
         if type(value) not in (str, int, list):
-            raise TypeError("Map values must be strings, numbers or lists, not " + str(type(value)))
+            raise TypeError(
+                f"Map values must be strings, numbers or lists, not {str(type(value))}"
+            )
+
         return [key]
 
     def generateValueNode(self, node):
@@ -66,7 +69,7 @@ class FieldnameListBackend(BaseBackend):
         return [node.item]
 
     def generateAggregation(self, agg):
-        fields = list()
+        fields = []
         if agg.groupfield is not None:
             fields.append(agg.groupfield)
         if agg.aggfield is not None:

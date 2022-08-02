@@ -18,7 +18,7 @@ from es_config import *
 currentdir = os.path.dirname(os.path.abspath(__file__))
 
 def load_file(filename):
-    with open(os.path.normpath(currentdir +'/index/'+ filename), 'rb') as f:
+    with open(os.path.normpath(f'{currentdir}/index/{filename}'), 'rb') as f:
         return json.load(f)       
          
 def import_index(filename, index_name):    
@@ -36,4 +36,4 @@ if __name__ == '__main__':
 
     es_dbc = ES_DB_Connector()
 
-    import_index(SIGMA_DOC_INDEX_NAME+'_index.json', SIGMA_DOC_INDEX_NAME)
+    import_index(f'{SIGMA_DOC_INDEX_NAME}_index.json', SIGMA_DOC_INDEX_NAME)

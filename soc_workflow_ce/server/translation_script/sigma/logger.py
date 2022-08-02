@@ -27,7 +27,7 @@ class Logger:
         if not os.path.exists(self.logPath):
             self.logPath = os.path.dirname(os.path.abspath(__file__))
 
-        LOG_FILENAME = os.path.normpath('{}/{}.log'.format(self.logPath, logger_name))
+        LOG_FILENAME = os.path.normpath(f'{self.logPath}/{logger_name}.log')
 
         fh = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=5242880, backupCount=10)
         fh.setLevel(logging.INFO)
@@ -52,5 +52,5 @@ class Logger:
 
     def log(self, level, msg):
         msg = str(msg).replace('%', '')
-        self.logger.log(level, str(msg) +' %s', '')
+        self.logger.log(level, f'{msg} %s', '')
 
